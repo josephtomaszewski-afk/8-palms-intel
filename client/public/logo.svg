@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 100" fill="#2d2d2d">
+  <!-- "8 Palms" text -->
+  <text x="5" y="82" font-family="'Helvetica Neue', 'Arial Black', Arial, sans-serif" font-weight="800" font-size="72" letter-spacing="-1">8 Palms</text>
+  <!-- Palm tree silhouette - single palm, trunk curves right, 7 drooping fronds -->
+  <g transform="translate(288, 2)">
+    <!-- curved trunk -->
+    <path d="M28 85 C30 72 33 58 38 46 C43 34 48 24 52 18" stroke="#2d2d2d" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <!-- fronds - 7 leaves drooping naturally -->
+    <!-- center top frond -->
+    <path d="M52 18 C52 18 48 2 42 -8 C40 -12 44 -14 47 -10 C52 -2 55 10 52 18Z"/>
+    <!-- right frond 1 -->
+    <path d="M52 18 C52 18 62 4 72 -2 C76 -4 78 -1 76 2 C72 8 60 14 52 18Z"/>
+    <!-- right frond 2 - drooping -->
+    <path d="M52 18 C52 18 66 12 78 14 C82 15 82 18 79 19 C72 20 60 18 52 18Z"/>
+    <!-- right frond 3 - drooping more -->
+    <path d="M52 18 C52 18 64 20 74 28 C77 30 76 33 73 32 C66 29 58 22 52 18Z"/>
+    <!-- left frond 1 -->
+    <path d="M52 18 C52 18 42 4 32 0 C28 -1 26 2 28 4 C32 8 44 14 52 18Z"/>
+    <!-- left frond 2 - drooping -->
+    <path d="M52 18 C52 18 38 14 28 18 C24 19 24 22 27 22 C34 22 44 20 52 18Z"/>
+    <!-- left frond 3 - drooping more -->
+    <path d="M52 18 C52 18 40 24 32 32 C29 35 30 37 33 36 C38 33 46 26 52 18Z"/>
+  </g>
+</svg>

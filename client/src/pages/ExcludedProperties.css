@@ -1,0 +1,19 @@
+.excluded-properties { max-width: 1400px; margin: 0 auto; padding: 30px; }
+.excluded-properties .page-header { margin-bottom: 25px; }
+.excluded-properties .page-header h1 { margin: 0; color: #1b1b1b; }
+
+.excluded-table-container { background: white; border: 1px solid #e0e0e0; border-radius: 8px; overflow-x: auto; }
+.excluded-table { width: 100%; border-collapse: collapse; }
+.excluded-table thead { background: #f8f9fa; }
+.excluded-table th { padding: 12px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+.excluded-table td { padding: 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+.excluded-table tr:hover { background: #f8f9fa; }
+
+.excluded-by-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; background: #fde8e8; color: #8b1a1a; white-space: nowrap; }
+.excluded-address { font-weight: 500; color: #1b1b1b; white-space: nowrap; }
+.excluded-city { font-size: 11px; color: #95a5a6; }
+
+.unexclude-btn { background: none; border: none; color: #ccc; font-size: 20px; cursor: pointer; padding: 2px 6px; line-height: 1; border-radius: 4px; }
+.unexclude-btn:hover { background: #fee; color: #e74c3c; }
+
+@media (max-width: 768px) { .excluded-properties { padding: 15px; } }

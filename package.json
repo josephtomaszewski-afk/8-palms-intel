@@ -1,0 +1,15 @@
+{
+  "name": "8-palms-intel",
+  "version": "1.0.0",
+  "description": "8 Palms Section 8 Market Intelligence Platform",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build",
+    "start": "cd server && node server.js",
+    "dev": "cd server && npm run dev",
+    "postinstall": "npm run install:all && npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

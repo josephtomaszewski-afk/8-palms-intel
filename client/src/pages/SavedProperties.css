@@ -1,0 +1,27 @@
+.saved-properties { max-width: 1400px; margin: 0 auto; padding: 30px; }
+.saved-properties .page-header { margin-bottom: 25px; }
+.saved-properties .page-header h1 { margin: 0; color: #1b1b1b; }
+
+.empty-state { text-align: center; padding: 60px 20px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; }
+.empty-state h3 { color: #1b1b1b; margin: 0 0 8px; }
+.empty-state p { color: #95a5a6; margin: 0; }
+
+.saved-table-container { background: white; border: 1px solid #e0e0e0; border-radius: 8px; overflow-x: auto; }
+.saved-table { width: 100%; border-collapse: collapse; }
+.saved-table thead { background: #f8f9fa; }
+.saved-table th { padding: 12px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+.saved-table td { padding: 10px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+.saved-table tr:hover { background: #f8f9fa; }
+
+.saved-by-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; background: #e8f4f8; color: #1c4d5a; white-space: nowrap; }
+.saved-address { font-weight: 500; color: #1b1b1b; white-space: nowrap; }
+.saved-city { font-size: 11px; color: #95a5a6; }
+.price-cell { font-weight: 600; color: #477d8f; }
+.date-cell { font-size: 12px; color: #95a5a6; white-space: nowrap; }
+
+.unsave-btn { background: none; border: none; color: #ccc; font-size: 20px; cursor: pointer; padding: 2px 6px; line-height: 1; border-radius: 4px; }
+.unsave-btn:hover { background: #fee; color: #e74c3c; }
+
+.score-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 700; }
+
+@media (max-width: 768px) { .saved-properties { padding: 15px; } }
