@@ -10,7 +10,7 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? [process.env.CLIENT_URL || 'https://invest.8-palms.com']
+    ? [process.env.CLIENT_URL || 'https://intel.8-palms.com']
     : '*'
 }));
 app.use(express.json());
