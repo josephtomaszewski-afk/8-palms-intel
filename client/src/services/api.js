@@ -47,7 +47,9 @@ export const homeService = {
   excludeProperty: (homeListingId) => api.post('/homes/exclude', { homeListingId }),
   unexcludeProperty: (homeListingId) => api.delete(`/homes/exclude/${homeListingId}`),
   getExcludedProperties: () => api.get('/homes/excluded'),
-  getMyExcludedIds: () => api.get('/homes/excluded/my-ids')
+  getMyExcludedIds: () => api.get('/homes/excluded/my-ids'),
+  getValueAddListings: (params) => api.get('/homes/value-add', { params }),
+  refreshValueAddListings: () => api.post('/homes/value-add/refresh')
 }
 
 export default api

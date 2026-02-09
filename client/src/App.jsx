@@ -8,6 +8,7 @@ import HomeMapView from './pages/HomeMapView'
 import HomeDetail from './pages/HomeDetail'
 import SavedProperties from './pages/SavedProperties'
 import ExcludedProperties from './pages/ExcludedProperties'
+import ValueAddMultifamily from './pages/ValueAddMultifamily'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="/homes/:id" element={<PrivateRoute><HomeDetail /></PrivateRoute>} />
           <Route path="/saved" element={<PrivateRoute><SavedProperties /></PrivateRoute>} />
           <Route path="/excluded" element={<PrivateRoute><ExcludedProperties /></PrivateRoute>} />
+          <Route path="/value-add" element={<PrivateRoute><ValueAddMultifamily /></PrivateRoute>} />
 
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

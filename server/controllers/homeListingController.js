@@ -5,7 +5,7 @@ const MarketSnapshot = require('../models/MarketSnapshot');
 const SavedProperty = require('../models/SavedProperty');
 const ExcludedProperty = require('../models/ExcludedProperty');
 const User = require('../models/User');
-const { fetchAllListings, scoreListing, calculateMarketStats } = require('../services/homeDataService');
+const { fetchAllListings, fetchValueAddMultifamily, scoreListing, calculateMarketStats } = require('../services/homeDataService');
 
 // Exclude 3BR/4BR single-family over $250k — multifamily has no cap
 const SFR_PRICE_CAP = 250000;
@@ -392,9 +392,69 @@ const getMyExcludedIds = async (req, res) => {
   }
 };
 
+// Value Add Multifamily - get cached listings from DB
+const getValueAddListings = async (req, res) => {
+  try {
+    const { metro, sort } = req.query;
+    const where = {
+      isActive: true,
+      propertyType: 'multi_family',
+      price: { [Op.gte]: 3000000, [Op.lte]: 6000000 }
+    };
+    if (metro && metro !== 'all') where.metro = metro;
+
+    let order = [['price', 'DESC']];
+    if (sort === 'price_asc') order = [['price', 'ASC']];
+    if (sort === 'price_desc') order = [['price', 'DESC']];
+    if (sort === 'newest') order = [['createdAt', 'DESC']];
+    if (sort === 'dom') order = [['daysOnMarket', 'DESC NULLS LAST']];
+
+    const listings = await HomeListing.findAll({ where, order });
+
+    // Add isValueAdd flag based on description
+    const enhanced = listings.map(l => {
+      const desc = (l.description || '').toLowerCase();
+      const isValueAdd = desc.includes('value add') || desc.includes('value-add') || desc.includes('valueadd');
+      return { ...l.toJSON(), isValueAdd };
+    });
+
+    res.json({ listings: enhanced, count: enhanced.length });
+  } catch (error) {
+    console.error('Error fetching Value Add listings:', error);
+    res.status(500).json({ error: 'Failed to fetch Value Add listings' });
+  }
+};
+
+// Refresh Value Add Multifamily from API
+const refreshValueAddListings = async (req, res) => {
+  try {
+    console.log('Starting Value Add multifamily refresh from RapidAPI...');
+    const rawListings = await fetchValueAddMultifamily();
+    let created = 0, updated = 0, skipped = 0, errors = 0;
+
+    for (const listing of rawListings) {
+      if (!listing.sourceId || !listing.price) { skipped++; continue; }
+      try {
+        const [record, wasCreated] = await HomeListing.upsert(listing, { conflictFields: ['sourceId'] });
+        if (wasCreated) created++; else updated++;
+      } catch (err) {
+        errors++;
+        console.error(`Error upserting ${listing.address}: ${err.message}`);
+      }
+    }
+
+    console.log(`Value Add refresh complete: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
+    res.json({ message: 'Value Add refresh complete', stats: { total: rawListings.length, created, updated, skipped, errors } });
+  } catch (error) {
+    console.error('Error refreshing Value Add listings:', error);
+    res.status(500).json({ error: 'Failed to refresh Value Add listings' });
+  }
+};
+
 module.exports = {
   getAllHomeListings, getHomeAnalytics, getTopDeals,
   getHomeListingById, refreshListings, scoreListings, getHomeListingsForMap, getRefreshStatus,
   getMarketHistory, saveProperty, unsaveProperty, getSavedProperties, getMySavedIds,
-  excludeProperty, unexcludeProperty, getExcludedProperties, getMyExcludedIds
+  excludeProperty, unexcludeProperty, getExcludedProperties, getMyExcludedIds,
+  getValueAddListings, refreshValueAddListings
 };

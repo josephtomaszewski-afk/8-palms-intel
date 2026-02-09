@@ -134,6 +134,11 @@ const HomeListing = sequelize.define('HomeListing', {
     type: DataTypes.STRING(500),
     allowNull: true
   },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Property listing description text'
+  },
   listingStatus: {
     type: DataTypes.STRING,
     allowNull: true,

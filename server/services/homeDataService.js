@@ -18,6 +18,14 @@ const METROS = {
   }
 };
 
+// Florida cities for statewide Value Add Multifamily search
+const FLORIDA_CITIES_VALUE_ADD = [
+  'Miami', 'Fort Lauderdale', 'West Palm Beach', 'Boca Raton', 'Hollywood',
+  'Tampa', 'St Petersburg', 'Orlando', 'Jacksonville', 'Gainesville',
+  'Tallahassee', 'Pensacola', 'Fort Myers', 'Naples', 'Sarasota',
+  'Daytona Beach', 'Melbourne', 'Port St Lucie', 'Cape Coral', 'Ocala'
+];
+
 const SEARCH_CONFIGS = [
   { beds_min: 3, beds_max: 3, property_type: 'single_family' },
   { beds_min: 4, beds_max: 4, property_type: 'single_family' },
@@ -127,6 +135,7 @@ function normalizeListing(raw, metro) {
     sourceUrl: raw.href || null,
     sourceId: raw.property_id || raw.listing_id || null,
     photoUrl: raw.primary_photo?.href || raw.photos?.[0]?.href || null,
+    description: raw.description?.text || raw.text || null,
     listingStatus: raw.status || 'for_sale',
     isActive: true,
     lastUpdated: new Date()
@@ -209,4 +218,144 @@ function calculateMarketStats(listings) {
   return stats;
 }
 
-module.exports = { fetchAllListings, scoreListing, calculateMarketStats, METROS, SEARCH_CONFIGS };
+// Fetch statewide Florida multifamily $3M-$6M for Value Add section
+async function fetchValueAddMultifamily() {
+  const allListings = [];
+  const MIN_PRICE = 3000000;
+  const MAX_PRICE = 6000000;
+
+  for (const city of FLORIDA_CITIES_VALUE_ADD) {
+    try {
+      console.log(`Fetching Value Add multifamily in ${city}, FL...`);
+      const params = {
+        location: `${city}, FL`,
+        status: 'for_sale',
+        property_type: 'multi_family',
+        price_min: MIN_PRICE,
+        price_max: MAX_PRICE,
+        sort: 'newest',
+        limit: 50
+      };
+
+      const response = await apiClient.get('/for-sale', { params });
+      const data = response.data;
+      let rawListings = [];
+      if (data && Array.isArray(data.listings)) rawListings = data.listings;
+      else if (Array.isArray(data)) rawListings = data;
+
+      console.log(`  Got ${rawListings.length} raw listings`);
+
+      for (const raw of rawListings) {
+        const normalized = normalizeValueAddListing(raw, city);
+        if (normalized) allListings.push(normalized);
+      }
+
+      // Rate limit delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error(`Error fetching Value Add for ${city}:`, error.message);
+    }
+  }
+
+  // Dedupe by sourceId
+  const seen = new Set();
+  const deduped = allListings.filter(l => {
+    if (!l.sourceId || seen.has(l.sourceId)) return false;
+    seen.add(l.sourceId);
+    return true;
+  });
+
+  console.log(`Fetched ${deduped.length} Value Add multifamily listings statewide`);
+  return deduped;
+}
+
+// Normalize listing for Value Add (no Section 8 filters, keep all multifamily $3M-$6M)
+function normalizeValueAddListing(raw, city) {
+  const desc = raw.description || {};
+  const loc = raw.location || {};
+  const addr = loc.address || {};
+  const coord = addr.coordinate || {};
+
+  const price = parseFloat(raw.list_price || 0);
+  if (price < 3000000 || price > 6000000) return null;
+
+  const sqft = parseInt(desc.sqft || 0);
+  const pricePerSqft = price && sqft ? (price / sqft) : null;
+  const beds = parseInt(desc.beds || 0);
+  const baths = parseFloat(desc.baths || 0);
+
+  // Only multifamily
+  const rawType = (desc.type || desc.sub_type || '').toLowerCase();
+  if (!rawType.includes('multi') && !rawType.includes('duplex') && !rawType.includes('triplex') && !rawType.includes('quadplex') && !rawType.includes('apartment')) {
+    return null;
+  }
+
+  let daysOnMarket = null;
+  if (raw.list_date) {
+    daysOnMarket = Math.floor((new Date() - new Date(raw.list_date)) / (1000 * 60 * 60 * 24));
+  }
+
+  const addressLine = addr.line || `${addr.street_number || ''} ${addr.street_name || ''} ${addr.street_suffix || ''}`.trim();
+  const descriptionText = raw.description?.text || raw.text || '';
+
+  // Determine metro based on city
+  let metro = 'Other FL';
+  const cityLower = (addr.city || city || '').toLowerCase();
+  if (['tampa', 'st petersburg', 'clearwater', 'brandon', 'riverview', 'wesley chapel', 'lakeland'].some(c => cityLower.includes(c))) {
+    metro = 'Tampa';
+  } else if (['orlando', 'kissimmee', 'sanford', 'winter park', 'clermont'].some(c => cityLower.includes(c))) {
+    metro = 'Orlando';
+  } else if (['jacksonville', 'orange park', 'st augustine'].some(c => cityLower.includes(c))) {
+    metro = 'Jacksonville';
+  } else if (['miami', 'fort lauderdale', 'hollywood', 'hialeah', 'coral gables'].some(c => cityLower.includes(c))) {
+    metro = 'Miami';
+  } else if (['west palm beach', 'boca raton', 'delray beach', 'boynton beach'].some(c => cityLower.includes(c))) {
+    metro = 'Palm Beach';
+  } else if (['fort myers', 'cape coral', 'naples', 'bonita springs'].some(c => cityLower.includes(c))) {
+    metro = 'SW Florida';
+  } else if (['sarasota', 'bradenton'].some(c => cityLower.includes(c))) {
+    metro = 'Sarasota';
+  }
+
+  const priceReductionAmount = raw.price_reduced_amount ? Math.abs(parseFloat(raw.price_reduced_amount)) : null;
+
+  return {
+    address: addressLine,
+    city: addr.city || city,
+    state: addr.state_code || 'FL',
+    zipCode: addr.postal_code || null,
+    latitude: parseFloat(coord.lat) || null,
+    longitude: parseFloat(coord.lon) || null,
+    propertyType: 'multi_family',
+    beds,
+    baths,
+    sqft,
+    lotSize: parseInt(desc.lot_sqft || 0) || null,
+    yearBuilt: parseInt(desc.year_built || 0) || null,
+    stories: parseInt(desc.stories || 0) || null,
+    garage: raw.flags?.is_garage_present ? 1 : null,
+    price,
+    originalPrice: priceReductionAmount ? price + priceReductionAmount : price,
+    pricePerSqft,
+    estimatedRent: null,
+    rentalYield: null,
+    daysOnMarket,
+    priceReductions: priceReductionAmount ? 1 : 0,
+    priceReductionAmount,
+    metro,
+    neighborhood: loc.neighborhoods?.[0]?.name || null,
+    source: 'realtor',
+    sourceUrl: raw.href || null,
+    sourceId: raw.property_id || raw.listing_id || null,
+    photoUrl: raw.primary_photo?.href || raw.photos?.[0]?.href || null,
+    description: descriptionText,
+    listingStatus: raw.status || 'for_sale',
+    isActive: true,
+    lastUpdated: new Date(),
+    isValueAdd: descriptionText.toLowerCase().includes('value add') ||
+                descriptionText.toLowerCase().includes('value-add') ||
+                descriptionText.toLowerCase().includes('valueadd')
+  };
+}
+
+module.exports = { fetchAllListings, fetchValueAddMultifamily, scoreListing, calculateMarketStats, METROS, SEARCH_CONFIGS };

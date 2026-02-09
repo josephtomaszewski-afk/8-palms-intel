@@ -5,7 +5,8 @@ const {
   getAllHomeListings, getHomeAnalytics, getTopDeals,
   getHomeListingById, refreshListings, scoreListings, getHomeListingsForMap, getRefreshStatus,
   getMarketHistory, saveProperty, unsaveProperty, getSavedProperties, getMySavedIds,
-  excludeProperty, unexcludeProperty, getExcludedProperties, getMyExcludedIds
+  excludeProperty, unexcludeProperty, getExcludedProperties, getMyExcludedIds,
+  getValueAddListings, refreshValueAddListings
 } = require('../controllers/homeListingController');
 
 router.use(auth);
@@ -26,6 +27,8 @@ router.post('/exclude', excludeProperty);
 router.delete('/exclude/:homeListingId', unexcludeProperty);
 router.post('/refresh', refreshListings);
 router.post('/score', scoreListings);
+router.get('/value-add', getValueAddListings);
+router.post('/value-add/refresh', refreshValueAddListings);
 router.get('/:id', getHomeListingById);
 
 module.exports = router;
