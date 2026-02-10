@@ -139,6 +139,16 @@ const HomeListing = sequelize.define('HomeListing', {
     allowNull: true,
     comment: 'Property listing description text'
   },
+  units: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Number of units for multifamily properties'
+  },
+  capRate: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: true,
+    comment: 'Cap rate percentage for commercial properties'
+  },
   listingStatus: {
     type: DataTypes.STRING,
     allowNull: true,

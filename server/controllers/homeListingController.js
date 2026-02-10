@@ -5,7 +5,7 @@ const MarketSnapshot = require('../models/MarketSnapshot');
 const SavedProperty = require('../models/SavedProperty');
 const ExcludedProperty = require('../models/ExcludedProperty');
 const User = require('../models/User');
-const { fetchAllListings, fetchValueAddMultifamily, scoreListing, calculateMarketStats } = require('../services/homeDataService');
+const { fetchAllListings, fetchValueAddMultifamily, fetchValueAddCombined, scoreListing, calculateMarketStats } = require('../services/homeDataService');
 
 // Exclude 3BR/4BR single-family over $250k — multifamily has no cap
 const SFR_PRICE_CAP = 250000;
@@ -407,14 +407,20 @@ const getValueAddListings = async (req, res) => {
     if (sort === 'price_asc') order = [['price', 'ASC']];
     if (sort === 'price_desc') order = [['price', 'DESC']];
     if (sort === 'newest') order = [['createdAt', 'DESC']];
-    if (sort === 'dom') order = [['daysOnMarket', 'DESC NULLS LAST']];
+    if (sort === 'dom_desc') order = [['daysOnMarket', 'DESC NULLS LAST']];
 
     const listings = await HomeListing.findAll({ where, order });
 
-    // Add isValueAdd flag based on description
+    // Add isValueAdd flag based on description keywords
     const enhanced = listings.map(l => {
       const desc = (l.description || '').toLowerCase();
-      const isValueAdd = desc.includes('value add') || desc.includes('value-add') || desc.includes('valueadd');
+      const isValueAdd = desc.includes('value add') ||
+                         desc.includes('value-add') ||
+                         desc.includes('valueadd') ||
+                         desc.includes('upside') ||
+                         desc.includes('below market rent') ||
+                         desc.includes('under market') ||
+                         desc.includes('repositioning');
       return { ...l.toJSON(), isValueAdd };
     });
 
@@ -425,18 +431,21 @@ const getValueAddListings = async (req, res) => {
   }
 };
 
-// Refresh Value Add Multifamily from API
+// Refresh Value Add Multifamily from API (MLS + LoopNet combined)
 const refreshValueAddListings = async (req, res) => {
   try {
-    console.log('Starting Value Add multifamily refresh from RapidAPI...');
-    const rawListings = await fetchValueAddMultifamily();
+    console.log('Starting Value Add multifamily refresh (MLS + LoopNet)...');
+    const rawListings = await fetchValueAddCombined();
     let created = 0, updated = 0, skipped = 0, errors = 0;
+    let mlsCount = 0, loopnetCount = 0;
 
     for (const listing of rawListings) {
       if (!listing.sourceId || !listing.price) { skipped++; continue; }
       try {
         const [record, wasCreated] = await HomeListing.upsert(listing, { conflictFields: ['sourceId'] });
         if (wasCreated) created++; else updated++;
+        if (listing.source === 'loopnet') loopnetCount++;
+        else mlsCount++;
       } catch (err) {
         errors++;
         console.error(`Error upserting ${listing.address}: ${err.message}`);
@@ -444,7 +453,11 @@ const refreshValueAddListings = async (req, res) => {
     }
 
     console.log(`Value Add refresh complete: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
-    res.json({ message: 'Value Add refresh complete', stats: { total: rawListings.length, created, updated, skipped, errors } });
+    console.log(`Sources: ${mlsCount} from MLS, ${loopnetCount} from LoopNet`);
+    res.json({
+      message: 'Value Add refresh complete (MLS + LoopNet)',
+      stats: { total: rawListings.length, created, updated, skipped, errors, mlsCount, loopnetCount }
+    });
   } catch (error) {
     console.error('Error refreshing Value Add listings:', error);
     res.status(500).json({ error: 'Failed to refresh Value Add listings' });

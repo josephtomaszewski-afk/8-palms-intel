@@ -97,7 +97,7 @@ const ValueAddMultifamily = () => {
         <div className="page-header">
           <div>
             <h1>Value Add Multifamily</h1>
-            <p className="page-subtitle">Florida Statewide — $3M - $6M Multifamily Properties</p>
+            <p className="page-subtitle">Florida Statewide — $3M - $6M Multifamily Properties (MLS + LoopNet)</p>
           </div>
           <div className="refresh-area">
             <span className="listing-count">{listings.length} listings</span>
@@ -149,14 +149,17 @@ const ValueAddMultifamily = () => {
                   </div>
                   <div className="listing-price">{fmt(listing.price)}</div>
                   <div className="listing-details">
-                    <span>{listing.beds} beds</span>
-                    <span>{listing.baths} baths</span>
+                    {listing.units > 0 && <span>{listing.units} units</span>}
+                    {!listing.units && listing.beds > 0 && <span>{listing.beds} beds</span>}
+                    {listing.baths > 0 && <span>{listing.baths} baths</span>}
                     {listing.sqft > 0 && <span>{listing.sqft.toLocaleString()} sqft</span>}
                   </div>
                   <div className="listing-meta">
                     <span className="metro-tag">{listing.metro}</span>
+                    {listing.source === 'loopnet' && <span className="source-badge loopnet">LOOPNET</span>}
                     {listing.isValueAdd && <span className="value-add-badge">VALUE ADD</span>}
-                    {listing.daysOnMarket && <span className="dom">{listing.daysOnMarket} DOM</span>}
+                    {listing.capRate > 0 && <span className="cap-rate">{parseFloat(listing.capRate).toFixed(1)}% Cap</span>}
+                    {listing.daysOnMarket > 0 && <span className="dom">{listing.daysOnMarket} DOM</span>}
                   </div>
                   {listing.pricePerSqft && (
                     <div className="price-per-sqft">{fmt(listing.pricePerSqft)}/sqft</div>

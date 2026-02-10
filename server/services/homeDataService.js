@@ -40,6 +40,17 @@ const apiClient = axios.create({
   }
 });
 
+// LoopNet API client for commercial listings
+const LOOPNET_HOST = 'loopnet-api.p.rapidapi.com';
+const loopnetClient = axios.create({
+  baseURL: 'https://loopnet-api.p.rapidapi.com',
+  headers: {
+    'x-rapidapi-key': RAPIDAPI_KEY,
+    'x-rapidapi-host': LOOPNET_HOST,
+    'Content-Type': 'application/json'
+  }
+});
+
 async function fetchListings(city, state, searchConfig) {
   try {
     const params = {
@@ -358,4 +369,231 @@ function normalizeValueAddListing(raw, city) {
   };
 }
 
-module.exports = { fetchAllListings, fetchValueAddMultifamily, scoreListing, calculateMarketStats, METROS, SEARCH_CONFIGS };
+// Fetch commercial multifamily listings from LoopNet API
+async function fetchLoopNetMultifamily() {
+  const allListings = [];
+  const MIN_PRICE = 3000000;
+  const MAX_PRICE = 6000000;
+
+  try {
+    console.log('Fetching LoopNet commercial multifamily listings for Florida...');
+
+    // Use Search By State endpoint for Florida
+    const response = await loopnetClient.post('/loopnet/sale/searchByState', {
+      state: 'FL',
+      propertyType: 'Multifamily',
+      priceMin: MIN_PRICE,
+      priceMax: MAX_PRICE,
+      page: 1
+    });
+
+    const data = response.data;
+    let rawListings = [];
+
+    // Handle various response shapes
+    if (data && Array.isArray(data.results)) {
+      rawListings = data.results;
+    } else if (data && Array.isArray(data.listings)) {
+      rawListings = data.listings;
+    } else if (data && Array.isArray(data.properties)) {
+      rawListings = data.properties;
+    } else if (Array.isArray(data)) {
+      rawListings = data;
+    }
+
+    console.log(`  LoopNet returned ${rawListings.length} raw listings`);
+
+    for (const raw of rawListings) {
+      const normalized = normalizeLoopNetListing(raw);
+      if (normalized) allListings.push(normalized);
+    }
+
+    // If there are more pages, fetch them (limit to 5 pages to save API calls)
+    const totalPages = data?.totalPages || data?.pages || 1;
+    for (let page = 2; page <= Math.min(totalPages, 5); page++) {
+      console.log(`  Fetching LoopNet page ${page}...`);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      try {
+        const pageResponse = await loopnetClient.post('/loopnet/sale/searchByState', {
+          state: 'FL',
+          propertyType: 'Multifamily',
+          priceMin: MIN_PRICE,
+          priceMax: MAX_PRICE,
+          page: page
+        });
+
+        const pageData = pageResponse.data;
+        let pageListings = [];
+        if (pageData && Array.isArray(pageData.results)) pageListings = pageData.results;
+        else if (pageData && Array.isArray(pageData.listings)) pageListings = pageData.listings;
+        else if (pageData && Array.isArray(pageData.properties)) pageListings = pageData.properties;
+        else if (Array.isArray(pageData)) pageListings = pageData;
+
+        for (const raw of pageListings) {
+          const normalized = normalizeLoopNetListing(raw);
+          if (normalized) allListings.push(normalized);
+        }
+      } catch (pageError) {
+        console.error(`  Error fetching LoopNet page ${page}:`, pageError.message);
+        break;
+      }
+    }
+
+  } catch (error) {
+    console.error('Error fetching LoopNet listings:', error.message);
+    if (error.response) {
+      console.error('  Response status:', error.response.status);
+      console.error('  Response data:', JSON.stringify(error.response.data).substring(0, 500));
+    }
+  }
+
+  console.log(`Fetched ${allListings.length} LoopNet commercial multifamily listings`);
+  return allListings;
+}
+
+// Normalize LoopNet listing to match our schema
+function normalizeLoopNetListing(raw) {
+  try {
+    // LoopNet has different field names - adapt based on actual response
+    const price = parseFloat(raw.price || raw.askingPrice || raw.listPrice || 0);
+    if (price < 3000000 || price > 6000000) return null;
+
+    const address = raw.address || raw.streetAddress || raw.location?.address || '';
+    const city = raw.city || raw.location?.city || '';
+    const state = raw.state || raw.location?.state || 'FL';
+    const zipCode = raw.zip || raw.zipCode || raw.postalCode || raw.location?.zip || null;
+
+    // Skip if no address
+    if (!address || address.length < 5) return null;
+
+    const sqft = parseInt(raw.buildingSize || raw.sqft || raw.squareFeet || raw.size || 0);
+    const pricePerSqft = price && sqft ? (price / sqft) : null;
+
+    const units = parseInt(raw.units || raw.numberOfUnits || raw.unitCount || 0);
+    const beds = parseInt(raw.beds || raw.bedrooms || units * 2 || 0); // Estimate beds from units
+    const baths = parseFloat(raw.baths || raw.bathrooms || units || 0);
+
+    // Parse coordinates
+    const lat = parseFloat(raw.latitude || raw.lat || raw.location?.lat || raw.geo?.lat || 0);
+    const lon = parseFloat(raw.longitude || raw.lng || raw.lon || raw.location?.lng || raw.geo?.lng || 0);
+
+    // Days on market
+    let daysOnMarket = null;
+    if (raw.listDate || raw.dateAdded || raw.listedDate) {
+      const listDate = new Date(raw.listDate || raw.dateAdded || raw.listedDate);
+      daysOnMarket = Math.floor((new Date() - listDate) / (1000 * 60 * 60 * 24));
+    } else if (raw.daysOnMarket || raw.dom) {
+      daysOnMarket = parseInt(raw.daysOnMarket || raw.dom);
+    }
+
+    // Description text
+    const descriptionText = raw.description || raw.remarks || raw.comments || '';
+
+    // Determine metro
+    let metro = 'Other FL';
+    const cityLower = city.toLowerCase();
+    if (['tampa', 'st petersburg', 'clearwater', 'brandon', 'riverview', 'wesley chapel', 'lakeland'].some(c => cityLower.includes(c))) {
+      metro = 'Tampa';
+    } else if (['orlando', 'kissimmee', 'sanford', 'winter park', 'clermont'].some(c => cityLower.includes(c))) {
+      metro = 'Orlando';
+    } else if (['jacksonville', 'orange park', 'st augustine'].some(c => cityLower.includes(c))) {
+      metro = 'Jacksonville';
+    } else if (['miami', 'fort lauderdale', 'hollywood', 'hialeah', 'coral gables', 'doral', 'kendall'].some(c => cityLower.includes(c))) {
+      metro = 'Miami';
+    } else if (['west palm beach', 'boca raton', 'delray beach', 'boynton beach', 'palm beach'].some(c => cityLower.includes(c))) {
+      metro = 'Palm Beach';
+    } else if (['fort myers', 'cape coral', 'naples', 'bonita springs', 'estero'].some(c => cityLower.includes(c))) {
+      metro = 'SW Florida';
+    } else if (['sarasota', 'bradenton', 'venice'].some(c => cityLower.includes(c))) {
+      metro = 'Sarasota';
+    }
+
+    // Generate a unique source ID
+    const sourceId = raw.id || raw.listingId || raw.propertyId || `loopnet-${address.replace(/\s/g, '')}-${zipCode}`;
+
+    return {
+      address: address,
+      city: city,
+      state: state,
+      zipCode: zipCode,
+      latitude: lat || null,
+      longitude: lon || null,
+      propertyType: 'multi_family',
+      beds: beds,
+      baths: baths,
+      sqft: sqft,
+      lotSize: parseInt(raw.lotSize || raw.landArea || 0) || null,
+      yearBuilt: parseInt(raw.yearBuilt || raw.built || 0) || null,
+      stories: parseInt(raw.stories || raw.floors || 0) || null,
+      garage: null,
+      price: price,
+      originalPrice: price,
+      pricePerSqft: pricePerSqft,
+      estimatedRent: null,
+      rentalYield: raw.capRate ? parseFloat(raw.capRate) : null,
+      daysOnMarket: daysOnMarket,
+      priceReductions: 0,
+      priceReductionAmount: null,
+      metro: metro,
+      neighborhood: raw.neighborhood || raw.submarket || null,
+      source: 'loopnet',
+      sourceUrl: raw.url || raw.detailUrl || raw.link || null,
+      sourceId: sourceId,
+      photoUrl: raw.image || raw.photo || raw.primaryImage || raw.photos?.[0] || null,
+      description: descriptionText,
+      listingStatus: 'for_sale',
+      isActive: true,
+      lastUpdated: new Date(),
+      isValueAdd: descriptionText.toLowerCase().includes('value add') ||
+                  descriptionText.toLowerCase().includes('value-add') ||
+                  descriptionText.toLowerCase().includes('valueadd') ||
+                  descriptionText.toLowerCase().includes('upside') ||
+                  descriptionText.toLowerCase().includes('below market rent'),
+      units: units || null,
+      capRate: raw.capRate ? parseFloat(raw.capRate) : null
+    };
+  } catch (error) {
+    console.error('Error normalizing LoopNet listing:', error.message);
+    return null;
+  }
+}
+
+// Combined fetch for Value Add - pulls from both MLS and LoopNet
+async function fetchValueAddCombined() {
+  console.log('Starting combined Value Add fetch (MLS + LoopNet)...');
+
+  // Fetch from both sources in parallel
+  const [mlsListings, loopnetListings] = await Promise.all([
+    fetchValueAddMultifamily(),
+    fetchLoopNetMultifamily()
+  ]);
+
+  console.log(`MLS listings: ${mlsListings.length}, LoopNet listings: ${loopnetListings.length}`);
+
+  // Combine and dedupe by address + zip
+  const combined = [...mlsListings];
+  const existingAddresses = new Set(mlsListings.map(l => `${l.address.toLowerCase()}-${l.zipCode}`));
+
+  for (const listing of loopnetListings) {
+    const key = `${listing.address.toLowerCase()}-${listing.zipCode}`;
+    if (!existingAddresses.has(key)) {
+      combined.push(listing);
+      existingAddresses.add(key);
+    }
+  }
+
+  console.log(`Combined unique listings: ${combined.length}`);
+  return combined;
+}
+
+module.exports = {
+  fetchAllListings,
+  fetchValueAddMultifamily,
+  fetchLoopNetMultifamily,
+  fetchValueAddCombined,
+  scoreListing,
+  calculateMarketStats,
+  METROS,
+  SEARCH_CONFIGS
+};
