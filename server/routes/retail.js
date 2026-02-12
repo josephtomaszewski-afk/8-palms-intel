@@ -12,10 +12,14 @@ const {
   refreshListings,
   getListings,
   getListingById,
-  updateUserPreferences
+  updateUserPreferences,
+  testLoopNetApi
 } = require('../controllers/retailController');
 
-// All routes require authentication
+// Debug/test endpoint (no auth for easier testing)
+router.get('/test-api', testLoopNetApi);
+
+// All other routes require authentication
 router.use(auth);
 
 // Chat endpoint - natural language search

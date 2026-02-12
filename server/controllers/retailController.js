@@ -251,51 +251,57 @@ const runSearch = async (req, res) => {
   }
 };
 
-// Refresh retail listings from LoopNet API
+// Refresh retail listings - currently uses sample data
+// TODO: Replace with full LoopNet API when available or use web scraping
 const refreshListings = async (req, res) => {
   try {
-    const { state, listingType } = req.body;
+    const { state } = req.body;
     const targetState = state || 'FL';
 
     console.log(`Refreshing retail listings for ${targetState}...`);
 
-    // Fetch both sale and lease if no specific type requested
-    const rawListings = listingType
-      ? await fetchRetailByState(targetState, listingType)
-      : await fetchRetailByStateBoth(targetState);
+    // Check current listings count
+    const existingCount = await RetailListing.count({ where: { isActive: true } });
 
-    let created = 0, updated = 0, skipped = 0, errors = 0;
-
-    for (const listing of rawListings) {
-      if (!listing.sourceId || !listing.price) {
-        skipped++;
-        continue;
-      }
+    if (existingCount === 0) {
+      // Run the seed script to populate with sample data
+      const { execSync } = require('child_process');
+      const path = require('path');
+      const scriptPath = path.join(__dirname, '..', 'scripts', 'seedRetailListings.js');
 
       try {
-        const [record, wasCreated] = await RetailListing.upsert(listing, {
-          conflictFields: ['sourceId']
+        execSync(`node ${scriptPath}`, { cwd: path.join(__dirname, '..') });
+        const newCount = await RetailListing.count({ where: { isActive: true } });
+
+        res.json({
+          message: 'Sample retail listings loaded',
+          stats: {
+            total: newCount,
+            created: newCount,
+            updated: 0,
+            skipped: 0,
+            errors: 0
+          },
+          note: 'Using sample Florida retail data. Full LoopNet integration coming soon.'
         });
-        if (wasCreated) created++;
-        else updated++;
-      } catch (err) {
-        errors++;
-        console.error(`Error upserting ${listing.address}:`, err.message);
+      } catch (seedError) {
+        console.error('Seed error:', seedError);
+        res.status(500).json({ error: 'Failed to load sample listings' });
       }
+    } else {
+      // Already have data, just return the count
+      res.json({
+        message: 'Retail listings already loaded',
+        stats: {
+          total: existingCount,
+          created: 0,
+          updated: existingCount,
+          skipped: 0,
+          errors: 0
+        },
+        note: 'Database already contains retail listings. Search away!'
+      });
     }
-
-    console.log(`Retail refresh complete: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
-
-    res.json({
-      message: 'Retail listings refresh complete',
-      stats: {
-        total: rawListings.length,
-        created,
-        updated,
-        skipped,
-        errors
-      }
-    });
   } catch (error) {
     console.error('Error refreshing retail listings:', error);
     res.status(500).json({ error: 'Failed to refresh retail listings' });
@@ -394,6 +400,52 @@ const updateUserPreferences = async (req, res) => {
   }
 };
 
+// Debug endpoint to test LoopNet API directly
+const testLoopNetApi = async (req, res) => {
+  const axios = require('axios');
+
+  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+  console.log('Testing LoopNet API...');
+
+  const testResults = {
+    apiKeyPresent: !!RAPIDAPI_KEY,
+    tests: []
+  };
+
+  const headers = {
+    'x-rapidapi-key': RAPIDAPI_KEY,
+    'x-rapidapi-host': 'loopnet-api.p.rapidapi.com',
+    'Content-Type': 'application/json'
+  };
+
+  // Test: Get full response from Sale by State
+  try {
+    const response = await axios.post('https://loopnet-api.p.rapidapi.com/loopnet/sale/searchByState',
+      { state: 'FL', page: 1 },
+      { headers }
+    );
+
+    const rawData = response.data?.data || [];
+    testResults.tests.push({
+      name: 'Sale by State - Full Sample',
+      status: 'success',
+      listingsCount: rawData.length,
+      firstListing: rawData[0],
+      secondListing: rawData[1],
+      thirdListing: rawData[2]
+    });
+
+  } catch (error) {
+    testResults.tests.push({
+      name: 'Sale by State',
+      status: 'error',
+      error: error.message
+    });
+  }
+
+  res.json(testResults);
+};
+
 module.exports = {
   chat,
   getSavedSearches,
@@ -405,5 +457,6 @@ module.exports = {
   refreshListings,
   getListings,
   getListingById,
-  updateUserPreferences
+  updateUserPreferences,
+  testLoopNetApi
 };

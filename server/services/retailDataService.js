@@ -66,6 +66,7 @@ function determineSubtype(description, rawType) {
 }
 
 // Fetch retail listings by state (for sale or lease)
+// Note: This API only returns listingId + coordinates, not full details
 async function fetchRetailByState(state, listingType = 'sale', priceMin = null, priceMax = null) {
   const allListings = [];
 
@@ -76,66 +77,27 @@ async function fetchRetailByState(state, listingType = 'sale', priceMin = null, 
 
   try {
     console.log(`Fetching LoopNet retail listings for ${state} (${listingType})...`);
-    console.log(`  Endpoint: ${endpoint}`);
 
-    const requestBody = {
-      state: state,
-      page: 1
-    };
-    if (priceMin) requestBody.priceMin = priceMin;
-    if (priceMax) requestBody.priceMax = priceMax;
-
-    console.log(`  Request body:`, JSON.stringify(requestBody));
-
-    const response = await loopnetClient.post(endpoint, requestBody);
-    const data = response.data;
-
-    console.log(`  Response received, type: ${typeof data}`);
-    console.log(`  Response keys:`, data ? Object.keys(data) : 'null');
-
-    // Log a sample of the response to understand structure
-    if (data) {
-      console.log(`  Response sample:`, JSON.stringify(data).substring(0, 500));
-    }
-
-    let rawListings = [];
-    if (data && Array.isArray(data.results)) rawListings = data.results;
-    else if (data && Array.isArray(data.listings)) rawListings = data.listings;
-    else if (data && Array.isArray(data.properties)) rawListings = data.properties;
-    else if (data && Array.isArray(data.data)) rawListings = data.data;
-    else if (Array.isArray(data)) rawListings = data;
-
-    console.log(`  LoopNet returned ${rawListings.length} raw retail listings`);
-
-    for (const raw of rawListings) {
-      const normalized = normalizeRetailListing(raw, listingType);
-      if (normalized) allListings.push(normalized);
-    }
-
-    // Fetch additional pages (limit to 5 to conserve API calls)
-    const totalPages = data?.totalPages || data?.pages || data?.total_pages || 1;
-    for (let page = 2; page <= Math.min(totalPages, 5); page++) {
-      console.log(`  Fetching page ${page}...`);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    // Fetch multiple pages
+    for (let page = 1; page <= 3; page++) {
+      const requestBody = { state: state, page: page };
 
       try {
-        const pageResponse = await loopnetClient.post(endpoint, {
-          ...requestBody,
-          page: page
-        });
+        const response = await loopnetClient.post(endpoint, requestBody);
+        const rawData = response.data?.data || [];
 
-        const pageData = pageResponse.data;
-        let pageListings = [];
-        if (pageData && Array.isArray(pageData.results)) pageListings = pageData.results;
-        else if (pageData && Array.isArray(pageData.listings)) pageListings = pageData.listings;
-        else if (pageData && Array.isArray(pageData.properties)) pageListings = pageData.properties;
-        else if (pageData && Array.isArray(pageData.data)) pageListings = pageData.data;
-        else if (Array.isArray(pageData)) pageListings = pageData;
+        console.log(`  Page ${page}: Got ${rawData.length} listings`);
 
-        for (const raw of pageListings) {
-          const normalized = normalizeRetailListing(raw, listingType);
+        for (const raw of rawData) {
+          const normalized = normalizeLoopNetListing(raw, listingType, state);
           if (normalized) allListings.push(normalized);
         }
+
+        if (rawData.length < 100) break; // No more pages
+
+        // Rate limit delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+
       } catch (pageError) {
         console.error(`  Error fetching page ${page}:`, pageError.message);
         break;
@@ -144,30 +106,149 @@ async function fetchRetailByState(state, listingType = 'sale', priceMin = null, 
 
   } catch (error) {
     console.error(`Error fetching retail listings for ${state}:`, error.message);
-    if (error.response) {
-      console.error('  Response status:', error.response.status);
-      console.error('  Response data:', JSON.stringify(error.response.data).substring(0, 500));
-    }
   }
 
-  console.log(`Fetched ${allListings.length} retail listings for ${state}`);
+  console.log(`Fetched ${allListings.length} retail listings for ${state} (${listingType})`);
   return allListings;
-
 }
+
+// Normalize listing from the limited LoopNet API response
+// The API only provides listingId and coordinates, so we construct what we can
+function normalizeLoopNetListing(raw, listingType, requestedState) {
+  if (!raw.listingId) return null;
+
+  const coords = raw.coordinations?.[0] || [];
+  const lng = coords[0] || null;
+  const lat = coords[1] || null;
+
+  // The LoopNet URL pattern for listings
+  const sourceUrl = `https://www.loopnet.com/Listing/${raw.listingId}/`;
+
+  return {
+    address: `LoopNet Listing #${raw.listingId}`,
+    city: 'View on LoopNet',
+    state: requestedState || 'FL',
+    zipCode: null,
+    latitude: lat,
+    longitude: lng,
+    propertyType: 'retail',
+    propertySubtype: 'retail',
+    sqft: null,
+    lotSize: null,
+    yearBuilt: null,
+    price: 0, // Unknown - user must click through
+    pricePerSqft: null,
+    capRate: null,
+    noi: null,
+    daysOnMarket: null,
+    description: `View full details on LoopNet. Listing ID: ${raw.listingId}`,
+    keywords: [],
+    tenantInfo: null,
+    leaseType: null,
+    occupancy: null,
+    source: 'loopnet',
+    sourceId: `loopnet-${raw.listingId}`,
+    sourceUrl: sourceUrl,
+    photoUrl: null,
+    listingStatus: listingType === 'lease' ? 'for_lease' : 'for_sale',
+    isActive: true,
+    lastUpdated: new Date()
+  };
+}
+
+// Major Florida cities for city-based search fallback
+const FLORIDA_CITIES = [
+  'Miami', 'Fort Lauderdale', 'West Palm Beach', 'Orlando', 'Tampa',
+  'Jacksonville', 'St. Petersburg', 'Clearwater', 'Naples', 'Fort Myers',
+  'Sarasota', 'Boca Raton', 'Pompano Beach', 'Hollywood', 'Hialeah',
+  'Coral Gables', 'Doral', 'Aventura', 'Pembroke Pines', 'Davie'
+];
 
 // Fetch both sale and lease listings
 async function fetchRetailByStateBoth(state, priceMin = null, priceMax = null) {
   console.log(`Fetching both sale and lease listings for ${state}...`);
 
+  // First try state-based search
   const [saleListings, leaseListings] = await Promise.all([
     fetchRetailByState(state, 'sale', priceMin, priceMax),
     fetchRetailByState(state, 'lease', priceMin, priceMax)
   ]);
 
-  const combined = [...saleListings, ...leaseListings];
-  console.log(`Total combined: ${combined.length} (${saleListings.length} sale, ${leaseListings.length} lease)`);
+  let combined = [...saleListings, ...leaseListings];
+  console.log(`State-based search: ${combined.length} (${saleListings.length} sale, ${leaseListings.length} lease)`);
+
+  // If state-based returned nothing, fall back to city-based searches
+  if (combined.length === 0 && state === 'FL') {
+    console.log('State search returned 0 results. Trying city-based search fallback...');
+    combined = await fetchRetailFromCities(FLORIDA_CITIES.slice(0, 10), state);
+  }
 
   return combined;
+}
+
+// Fetch retail from multiple cities
+async function fetchRetailFromCities(cities, state) {
+  const allListings = [];
+  const seenIds = new Set();
+
+  for (const city of cities) {
+    console.log(`  Trying city: ${city}...`);
+
+    // Try both sale and lease endpoints
+    for (const listingType of ['sale', 'lease']) {
+      try {
+        const endpoint = listingType === 'lease'
+          ? '/loopnet/lease/searchByCity'
+          : '/loopnet/sale/searchByCity';
+
+        const requestBody = {
+          city: city,
+          state: state,
+          page: 1
+        };
+
+        console.log(`    ${listingType} endpoint: ${endpoint}, body:`, JSON.stringify(requestBody));
+
+        const response = await loopnetClient.post(endpoint, requestBody);
+        const data = response.data;
+
+        console.log(`    Response type: ${typeof data}`);
+        if (data) {
+          console.log(`    Response keys: ${Object.keys(data)}`);
+          console.log(`    Response sample: ${JSON.stringify(data).substring(0, 300)}`);
+        }
+
+        let rawListings = [];
+        if (data && Array.isArray(data.results)) rawListings = data.results;
+        else if (data && Array.isArray(data.listings)) rawListings = data.listings;
+        else if (data && Array.isArray(data.properties)) rawListings = data.properties;
+        else if (data && Array.isArray(data.data)) rawListings = data.data;
+        else if (Array.isArray(data)) rawListings = data;
+
+        console.log(`    Got ${rawListings.length} raw listings for ${city} (${listingType})`);
+
+        for (const raw of rawListings) {
+          const normalized = normalizeRetailListing(raw, listingType);
+          if (normalized && !seenIds.has(normalized.sourceId)) {
+            seenIds.add(normalized.sourceId);
+            allListings.push(normalized);
+          }
+        }
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        console.error(`    Error fetching ${listingType} for ${city}:`, error.message);
+        if (error.response) {
+          console.error(`    Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data).substring(0, 200)}`);
+        }
+      }
+    }
+  }
+
+  console.log(`City-based search found ${allListings.length} total listings`);
+  return allListings;
 }
 
 // Fetch retail listings by city
@@ -367,8 +448,10 @@ module.exports = {
   fetchRetailByState,
   fetchRetailByStateBoth,
   fetchRetailByCity,
+  fetchRetailFromCities,
   searchRetailListings,
   normalizeRetailListing,
   extractKeywords,
-  RETAIL_KEYWORDS
+  RETAIL_KEYWORDS,
+  FLORIDA_CITIES
 };
