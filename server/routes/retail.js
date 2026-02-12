@@ -13,11 +13,15 @@ const {
   getListings,
   getListingById,
   updateUserPreferences,
-  testLoopNetApi
+  testLoopNetApi,
+  scrapeNow,
+  getStatus
 } = require('../controllers/retailController');
 
-// Debug/test endpoint (no auth for easier testing)
+// Public endpoints (no auth for easier testing)
 router.get('/test-api', testLoopNetApi);
+router.get('/status', getStatus);
+router.post('/scrape', scrapeNow);  // Synchronous scrape endpoint
 
 // All other routes require authentication
 router.use(auth);

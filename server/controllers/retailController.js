@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { RetailListing, RetailSearch, RetailSearchResult, User } = require('../models');
 const { parseSearchQuery, generateResultsResponse } = require('../services/claudeService');
 const { fetchRetailByState, fetchRetailByStateBoth, fetchRetailByCity, searchRetailListings } = require('../services/retailDataService');
+const { scrapeAll, scrapeCrexi, scrapeLoopNet } = require('../services/scraperService');
 
 // Chat endpoint - process natural language query
 const chat = async (req, res) => {
@@ -251,62 +252,74 @@ const runSearch = async (req, res) => {
   }
 };
 
-// Refresh retail listings - currently uses sample data
-// TODO: Replace with full LoopNet API when available or use web scraping
+// Refresh retail listings by scraping Crexi and LoopNet
 const refreshListings = async (req, res) => {
   try {
-    const { state } = req.body;
+    const { state, source } = req.body;
     const targetState = state || 'FL';
 
-    console.log(`Refreshing retail listings for ${targetState}...`);
+    console.log(`Refreshing retail listings for ${targetState} via web scraping...`);
 
-    // Check current listings count
-    const existingCount = await RetailListing.count({ where: { isActive: true } });
+    // Send immediate response that scraping started
+    res.json({
+      message: 'Scraping started',
+      status: 'in_progress',
+      note: `Scraping ${source || 'Crexi and LoopNet'} for ${targetState} retail listings. This may take 1-2 minutes.`
+    });
 
-    if (existingCount === 0) {
-      // Run the seed script to populate with sample data
-      const { execSync } = require('child_process');
-      const path = require('path');
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'seedRetailListings.js');
+    // Run scraping in background (don't await)
+    runScrapingJob(targetState, source);
 
-      try {
-        execSync(`node ${scriptPath}`, { cwd: path.join(__dirname, '..') });
-        const newCount = await RetailListing.count({ where: { isActive: true } });
-
-        res.json({
-          message: 'Sample retail listings loaded',
-          stats: {
-            total: newCount,
-            created: newCount,
-            updated: 0,
-            skipped: 0,
-            errors: 0
-          },
-          note: 'Using sample Florida retail data. Full LoopNet integration coming soon.'
-        });
-      } catch (seedError) {
-        console.error('Seed error:', seedError);
-        res.status(500).json({ error: 'Failed to load sample listings' });
-      }
-    } else {
-      // Already have data, just return the count
-      res.json({
-        message: 'Retail listings already loaded',
-        stats: {
-          total: existingCount,
-          created: 0,
-          updated: existingCount,
-          skipped: 0,
-          errors: 0
-        },
-        note: 'Database already contains retail listings. Search away!'
-      });
-    }
   } catch (error) {
-    console.error('Error refreshing retail listings:', error);
-    res.status(500).json({ error: 'Failed to refresh retail listings' });
+    console.error('Error starting scrape:', error);
+    res.status(500).json({ error: 'Failed to start scraping' });
   }
 };
+
+// Background scraping job
+async function runScrapingJob(state, source) {
+  try {
+    let scrapedListings = [];
+
+    if (source === 'crexi') {
+      scrapedListings = await scrapeCrexi(state, 3);
+    } else if (source === 'loopnet') {
+      scrapedListings = await scrapeLoopNet(state, 3);
+    } else {
+      scrapedListings = await scrapeAll(state, 3);
+    }
+
+    console.log(`Scraping complete: ${scrapedListings.length} listings found`);
+
+    // Save to database
+    let created = 0, updated = 0, errors = 0;
+
+    for (const listing of scrapedListings) {
+      try {
+        // Generate a consistent sourceId for deduplication
+        const sourceId = listing.sourceId || `${listing.source}-${listing.address.replace(/\s+/g, '-').substring(0, 50)}`;
+
+        const [record, wasCreated] = await RetailListing.upsert({
+          ...listing,
+          sourceId: sourceId
+        }, {
+          conflictFields: ['sourceId']
+        });
+
+        if (wasCreated) created++;
+        else updated++;
+      } catch (err) {
+        errors++;
+        console.error(`Error saving listing ${listing.address}:`, err.message);
+      }
+    }
+
+    console.log(`Scraping job complete: ${created} created, ${updated} updated, ${errors} errors`);
+
+  } catch (error) {
+    console.error('Scraping job error:', error);
+  }
+}
 
 // Get all retail listings (with filters)
 const getListings = async (req, res) => {
@@ -446,6 +459,101 @@ const testLoopNetApi = async (req, res) => {
   res.json(testResults);
 };
 
+// Synchronous scrape - waits for results (use for manual testing)
+const scrapeNow = async (req, res) => {
+  try {
+    const { state, source } = req.body;
+    const targetState = state || 'FL';
+
+    console.log(`Starting synchronous scrape for ${targetState}...`);
+
+    let scrapedListings = [];
+
+    if (source === 'crexi') {
+      scrapedListings = await scrapeCrexi(targetState, 2);
+    } else if (source === 'loopnet') {
+      scrapedListings = await scrapeLoopNet(targetState, 2);
+    } else {
+      // Default to both
+      scrapedListings = await scrapeAll(targetState, 2);
+    }
+
+    // Save to database
+    let created = 0, updated = 0, errors = 0;
+
+    for (const listing of scrapedListings) {
+      try {
+        const sourceId = listing.sourceId || `${listing.source}-${listing.address.replace(/\s+/g, '-').substring(0, 50)}`;
+
+        const [record, wasCreated] = await RetailListing.upsert({
+          ...listing,
+          sourceId: sourceId
+        }, {
+          conflictFields: ['sourceId']
+        });
+
+        if (wasCreated) created++;
+        else updated++;
+      } catch (err) {
+        errors++;
+        console.error(`Error saving listing:`, err.message);
+      }
+    }
+
+    // Get total count
+    const totalCount = await RetailListing.count({ where: { isActive: true } });
+
+    res.json({
+      message: 'Scraping complete',
+      stats: {
+        scraped: scrapedListings.length,
+        created,
+        updated,
+        errors,
+        totalInDatabase: totalCount
+      }
+    });
+  } catch (error) {
+    console.error('Scrape error:', error);
+    res.status(500).json({ error: 'Scraping failed', details: error.message });
+  }
+};
+
+// Get listing count/status
+const getStatus = async (req, res) => {
+  try {
+    const totalCount = await RetailListing.count({ where: { isActive: true } });
+    const bySource = await RetailListing.findAll({
+      attributes: [
+        'source',
+        [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count']
+      ],
+      where: { isActive: true },
+      group: ['source']
+    });
+
+    const byCity = await RetailListing.findAll({
+      attributes: [
+        'city',
+        [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count']
+      ],
+      where: { isActive: true },
+      group: ['city'],
+      order: [[require('sequelize').fn('COUNT', require('sequelize').col('id')), 'DESC']],
+      limit: 10
+    });
+
+    res.json({
+      total: totalCount,
+      bySource: bySource.map(s => ({ source: s.source, count: parseInt(s.get('count')) })),
+      topCities: byCity.map(c => ({ city: c.city, count: parseInt(c.get('count')) }))
+    });
+  } catch (error) {
+    console.error('Status error:', error);
+    res.status(500).json({ error: 'Failed to get status' });
+  }
+};
+
 module.exports = {
   chat,
   getSavedSearches,
@@ -458,5 +566,7 @@ module.exports = {
   getListings,
   getListingById,
   updateUserPreferences,
-  testLoopNetApi
+  testLoopNetApi,
+  scrapeNow,
+  getStatus
 };
