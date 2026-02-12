@@ -52,4 +52,25 @@ export const homeService = {
   refreshValueAddListings: () => api.post('/homes/value-add/refresh')
 }
 
+export const retailService = {
+  // Chat - natural language search
+  chat: (message) => api.post('/retail/chat', { message }),
+
+  // Saved searches
+  getSavedSearches: () => api.get('/retail/searches'),
+  saveSearch: (data) => api.post('/retail/searches', data),
+  updateSearch: (id, data) => api.put(`/retail/searches/${id}`, data),
+  deleteSearch: (id) => api.delete(`/retail/searches/${id}`),
+  getSearchResults: (id) => api.get(`/retail/searches/${id}/results`),
+  runSearch: (id) => api.post(`/retail/searches/${id}/run`),
+
+  // Listings
+  getListings: (params) => api.get('/retail/listings', { params }),
+  getListingById: (id) => api.get(`/retail/listings/${id}`),
+  refreshListings: (state) => api.post('/retail/listings/refresh', { state }),
+
+  // User preferences
+  updatePreferences: (data) => api.put('/retail/preferences', data)
+}
+
 export default api

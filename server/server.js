@@ -32,6 +32,7 @@ sequelize.sync({ alter: true })
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/homes', require('./routes/homes'));
+app.use('/api/retail', require('./routes/retail'));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: '8 Palms Homes Intel API running' });
@@ -57,4 +58,10 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
   console.log(`8 Palms Intel server running on port ${PORT}`);
+
+  // Start the retail search scheduler in production
+  if (process.env.NODE_ENV === 'production') {
+    const { startScheduler } = require('./services/schedulerService');
+    startScheduler();
+  }
 });

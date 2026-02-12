@@ -5,6 +5,9 @@ const HomeComparable = require('./HomeComparable');
 const MarketSnapshot = require('./MarketSnapshot');
 const SavedProperty = require('./SavedProperty');
 const ExcludedProperty = require('./ExcludedProperty');
+const RetailListing = require('./RetailListing');
+const RetailSearch = require('./RetailSearch');
+const RetailSearchResult = require('./RetailSearchResult');
 
 // Associations
 HomeListing.hasMany(HomeComparable, { foreignKey: 'homeListingId', as: 'comparables' });
@@ -20,7 +23,19 @@ ExcludedProperty.belongsTo(HomeListing, { foreignKey: 'homeListingId' });
 User.hasMany(ExcludedProperty, { foreignKey: 'userId' });
 HomeListing.hasMany(ExcludedProperty, { foreignKey: 'homeListingId' });
 
-const models = { User, HomeListing, HomeComparable, MarketSnapshot, SavedProperty, ExcludedProperty };
+// Retail Search associations
+RetailSearch.belongsTo(User, { foreignKey: 'userId' });
+User.hasMany(RetailSearch, { foreignKey: 'userId' });
+
+RetailSearchResult.belongsTo(RetailSearch, { foreignKey: 'retailSearchId' });
+RetailSearchResult.belongsTo(RetailListing, { foreignKey: 'retailListingId' });
+RetailSearch.hasMany(RetailSearchResult, { foreignKey: 'retailSearchId' });
+RetailListing.hasMany(RetailSearchResult, { foreignKey: 'retailListingId' });
+
+const models = {
+  User, HomeListing, HomeComparable, MarketSnapshot, SavedProperty, ExcludedProperty,
+  RetailListing, RetailSearch, RetailSearchResult
+};
 
 const syncDatabase = async (options = {}) => {
   try {

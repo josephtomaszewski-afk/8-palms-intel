@@ -25,6 +25,21 @@ const User = sequelize.define('User', {
   password: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  phone: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    comment: 'Phone number for SMS notifications'
+  },
+  notificationEmail: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    comment: 'Global email notification preference'
+  },
+  notificationSms: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Global SMS notification preference'
   }
 }, {
   tableName: 'users',
