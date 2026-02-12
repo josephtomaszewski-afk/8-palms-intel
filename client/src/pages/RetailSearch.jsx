@@ -7,6 +7,7 @@ const RetailSearch = () => {
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [listings, setListings] = useState([])
   const [currentCriteria, setCurrentCriteria] = useState(null)
   const [savedSearches, setSavedSearches] = useState([])
@@ -15,16 +16,55 @@ const RetailSearch = () => {
   const [saveName, setSaveName] = useState('')
   const [saveNotifyEmail, setSaveNotifyEmail] = useState(true)
   const [saveNotifySms, setSaveNotifySms] = useState(false)
+  const [listingCount, setListingCount] = useState(0)
   const chatEndRef = useRef(null)
 
   useEffect(() => {
     loadSavedSearches()
+    checkListingCount()
     // Add welcome message
     setMessages([{
       role: 'assistant',
-      content: "Welcome to Retail Search! I can help you find retail properties across Florida. Try something like:\n\n• \"Find restaurants with grease traps in Miami under $2M\"\n• \"Show me strip malls in Tampa\"\n• \"NNN retail properties in Orlando between $500K and $1.5M\""
+      content: "Welcome to Retail Search! I can help you find retail properties across Florida.\n\nFirst, click \"Refresh Data\" to load listings from LoopNet, then try:\n\n• \"Find restaurants with grease traps in Miami under $2M\"\n• \"Show me strip malls in Tampa\"\n• \"NNN retail properties in Orlando between $500K and $1.5M\""
     }])
   }, [])
+
+  const checkListingCount = async () => {
+    try {
+      const res = await retailService.getListings({ limit: 1 })
+      setListingCount(res.data.count || 0)
+    } catch (e) {
+      console.error('Failed to check listing count:', e)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: 'Fetching retail listings from LoopNet... This may take a minute.'
+    }])
+
+    try {
+      const res = await retailService.refreshListings('FL')
+      const { stats } = res.data
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Done! Loaded ${stats.total} retail listings (${stats.created} new, ${stats.updated} updated). You can now search for properties!`
+      }])
+
+      setListingCount(stats.total)
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, there was an error refreshing listings. Please try again.'
+      }])
+      console.error('Refresh error:', error)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -160,14 +200,23 @@ const RetailSearch = () => {
         <div className="page-header">
           <div>
             <h1>Retail Search</h1>
-            <p className="page-subtitle">AI-powered commercial retail property search</p>
+            <p className="page-subtitle">AI-powered commercial retail property search ({listingCount} listings in database)</p>
           </div>
-          <button
-            className="saved-searches-btn"
-            onClick={() => setShowSavedSearches(!showSavedSearches)}
-          >
-            Saved Searches ({savedSearches.length})
-          </button>
+          <div className="header-actions">
+            <button
+              className="refresh-btn"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh Data'}
+            </button>
+            <button
+              className="saved-searches-btn"
+              onClick={() => setShowSavedSearches(!showSavedSearches)}
+            >
+              Saved Searches ({savedSearches.length})
+            </button>
+          </div>
         </div>
 
         {showSavedSearches && savedSearches.length > 0 && (
