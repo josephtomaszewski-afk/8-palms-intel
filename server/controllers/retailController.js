@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const { RetailListing, RetailSearch, RetailSearchResult, User } = require('../models');
 const { parseSearchQuery, generateResultsResponse } = require('../services/claudeService');
-const { fetchRetailByState, fetchRetailByCity, searchRetailListings } = require('../services/retailDataService');
+const { fetchRetailByState, fetchRetailByStateBoth, fetchRetailByCity, searchRetailListings } = require('../services/retailDataService');
 
 // Chat endpoint - process natural language query
 const chat = async (req, res) => {
@@ -254,12 +254,15 @@ const runSearch = async (req, res) => {
 // Refresh retail listings from LoopNet API
 const refreshListings = async (req, res) => {
   try {
-    const { state } = req.body;
+    const { state, listingType } = req.body;
     const targetState = state || 'FL';
 
     console.log(`Refreshing retail listings for ${targetState}...`);
 
-    const rawListings = await fetchRetailByState(targetState);
+    // Fetch both sale and lease if no specific type requested
+    const rawListings = listingType
+      ? await fetchRetailByState(targetState, listingType)
+      : await fetchRetailByStateBoth(targetState);
 
     let created = 0, updated = 0, skipped = 0, errors = 0;
 

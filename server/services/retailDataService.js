@@ -65,45 +65,61 @@ function determineSubtype(description, rawType) {
   return 'retail';
 }
 
-// Fetch retail listings by state
-async function fetchRetailByState(state, priceMin = null, priceMax = null) {
+// Fetch retail listings by state (for sale or lease)
+async function fetchRetailByState(state, listingType = 'sale', priceMin = null, priceMax = null) {
   const allListings = [];
 
+  // Determine endpoint based on listing type
+  const endpoint = listingType === 'lease'
+    ? '/loopnet/lease/searchByState'
+    : '/loopnet/sale/searchByState';
+
   try {
-    console.log(`Fetching LoopNet retail listings for ${state}...`);
+    console.log(`Fetching LoopNet retail listings for ${state} (${listingType})...`);
+    console.log(`  Endpoint: ${endpoint}`);
 
     const requestBody = {
       state: state,
-      propertyType: 'Retail',
       page: 1
     };
     if (priceMin) requestBody.priceMin = priceMin;
     if (priceMax) requestBody.priceMax = priceMax;
 
-    const response = await loopnetClient.post('/loopnet/sale/searchByState', requestBody);
+    console.log(`  Request body:`, JSON.stringify(requestBody));
+
+    const response = await loopnetClient.post(endpoint, requestBody);
     const data = response.data;
+
+    console.log(`  Response received, type: ${typeof data}`);
+    console.log(`  Response keys:`, data ? Object.keys(data) : 'null');
+
+    // Log a sample of the response to understand structure
+    if (data) {
+      console.log(`  Response sample:`, JSON.stringify(data).substring(0, 500));
+    }
 
     let rawListings = [];
     if (data && Array.isArray(data.results)) rawListings = data.results;
     else if (data && Array.isArray(data.listings)) rawListings = data.listings;
     else if (data && Array.isArray(data.properties)) rawListings = data.properties;
+    else if (data && Array.isArray(data.data)) rawListings = data.data;
     else if (Array.isArray(data)) rawListings = data;
 
     console.log(`  LoopNet returned ${rawListings.length} raw retail listings`);
 
     for (const raw of rawListings) {
-      const normalized = normalizeRetailListing(raw);
+      const normalized = normalizeRetailListing(raw, listingType);
       if (normalized) allListings.push(normalized);
     }
 
     // Fetch additional pages (limit to 5 to conserve API calls)
-    const totalPages = data?.totalPages || data?.pages || 1;
+    const totalPages = data?.totalPages || data?.pages || data?.total_pages || 1;
     for (let page = 2; page <= Math.min(totalPages, 5); page++) {
       console.log(`  Fetching page ${page}...`);
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       try {
-        const pageResponse = await loopnetClient.post('/loopnet/sale/searchByState', {
+        const pageResponse = await loopnetClient.post(endpoint, {
           ...requestBody,
           page: page
         });
@@ -113,10 +129,11 @@ async function fetchRetailByState(state, priceMin = null, priceMax = null) {
         if (pageData && Array.isArray(pageData.results)) pageListings = pageData.results;
         else if (pageData && Array.isArray(pageData.listings)) pageListings = pageData.listings;
         else if (pageData && Array.isArray(pageData.properties)) pageListings = pageData.properties;
+        else if (pageData && Array.isArray(pageData.data)) pageListings = pageData.data;
         else if (Array.isArray(pageData)) pageListings = pageData;
 
         for (const raw of pageListings) {
-          const normalized = normalizeRetailListing(raw);
+          const normalized = normalizeRetailListing(raw, listingType);
           if (normalized) allListings.push(normalized);
         }
       } catch (pageError) {
@@ -129,11 +146,28 @@ async function fetchRetailByState(state, priceMin = null, priceMax = null) {
     console.error(`Error fetching retail listings for ${state}:`, error.message);
     if (error.response) {
       console.error('  Response status:', error.response.status);
+      console.error('  Response data:', JSON.stringify(error.response.data).substring(0, 500));
     }
   }
 
   console.log(`Fetched ${allListings.length} retail listings for ${state}`);
   return allListings;
+
+}
+
+// Fetch both sale and lease listings
+async function fetchRetailByStateBoth(state, priceMin = null, priceMax = null) {
+  console.log(`Fetching both sale and lease listings for ${state}...`);
+
+  const [saleListings, leaseListings] = await Promise.all([
+    fetchRetailByState(state, 'sale', priceMin, priceMax),
+    fetchRetailByState(state, 'lease', priceMin, priceMax)
+  ]);
+
+  const combined = [...saleListings, ...leaseListings];
+  console.log(`Total combined: ${combined.length} (${saleListings.length} sale, ${leaseListings.length} lease)`);
+
+  return combined;
 }
 
 // Fetch retail listings by city
@@ -176,9 +210,10 @@ async function fetchRetailByCity(city, state, priceMin = null, priceMax = null) 
 }
 
 // Normalize LoopNet listing to RetailListing schema
-function normalizeRetailListing(raw) {
+function normalizeRetailListing(raw, listingType = 'sale') {
   try {
-    const price = parseFloat(raw.price || raw.askingPrice || raw.listPrice || 0);
+    // For lease listings, price might be monthly rent
+    const price = parseFloat(raw.price || raw.askingPrice || raw.listPrice || raw.rent || raw.monthlyRent || 0);
     if (price <= 0) return null;
 
     const address = raw.address || raw.streetAddress || raw.location?.address || '';
@@ -259,7 +294,7 @@ function normalizeRetailListing(raw) {
       sourceId: sourceId,
       sourceUrl: raw.url || raw.detailUrl || raw.link || null,
       photoUrl: raw.image || raw.photo || raw.primaryImage || raw.photos?.[0] || null,
-      listingStatus: 'for_sale',
+      listingStatus: listingType === 'lease' ? 'for_lease' : 'for_sale',
       isActive: true,
       lastUpdated: new Date()
     };
@@ -330,6 +365,7 @@ async function searchRetailListings(criteria) {
 
 module.exports = {
   fetchRetailByState,
+  fetchRetailByStateBoth,
   fetchRetailByCity,
   searchRetailListings,
   normalizeRetailListing,
