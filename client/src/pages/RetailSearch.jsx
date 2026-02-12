@@ -25,7 +25,7 @@ const RetailSearch = () => {
     // Add welcome message
     setMessages([{
       role: 'assistant',
-      content: "Welcome to Retail Search! I can help you find retail properties across Florida.\n\nFirst, click \"Refresh Data\" to load listings from LoopNet, then try:\n\n• \"Find restaurants with grease traps in Miami under $2M\"\n• \"Show me strip malls in Tampa\"\n• \"NNN retail properties in Orlando between $500K and $1.5M\""
+      content: "Welcome to Retail Search! I can help you find retail properties across Florida.\n\nTry searching for:\n\n• \"Find restaurants with grease traps in Miami under $2M\"\n• \"Show me strip malls in Tampa\"\n• \"Drive-thru properties in Fort Lauderdale\"\n• \"NNN retail properties in Orlando\""
     }])
   }, [])
 
